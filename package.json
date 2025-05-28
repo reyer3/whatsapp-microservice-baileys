@@ -33,6 +33,7 @@
     "@types/node": "^20.14.0",
     "@types/cors": "^2.8.17",
     "@types/morgan": "^1.9.9",
+    "@types/qrcode-terminal": "^0.12.2",
     "typescript": "^5.4.5",
     "ts-node-dev": "^2.0.0",
     "rimraf": "^5.0.7"
