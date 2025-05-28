@@ -7,7 +7,8 @@ import makeWASocket, {
   WAMessage,
   AuthenticationState,
   SignalDataTypeMap,
-  Browsers
+  Browsers,
+  MessageUpsertType
 } from 'baileys';
 import qrcode from 'qrcode-terminal';
 import { WhatsAppService, WhatsAppConfig, MessagePayload, IncomingMessage } from '../types';
@@ -16,7 +17,7 @@ import { EventEmitter } from 'events';
 
 export class BaileysWhatsAppService extends EventEmitter implements WhatsAppService {
   private socket: WASocket | null = null;
-  private isConnected = false;
+  private connected = false; // Cambié el nombre para evitar conflicto
   private config: WhatsAppConfig;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
@@ -64,13 +65,13 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
       logger.info('Desconectando de WhatsApp...');
       this.socket.end(new Error('Desconexión solicitada'));
       this.socket = null;
-      this.isConnected = false;
+      this.connected = false;
       this.messageStore.clear();
     }
   }
 
   async sendMessage(payload: MessagePayload): Promise<boolean> {
-    if (!this.socket || !this.isConnected) {
+    if (!this.socket || !this.connected) {
       throw new Error('WhatsApp no está conectado');
     }
 
@@ -110,8 +111,9 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
     }
   }
 
+  // Método público para verificar conexión
   isConnected(): boolean {
-    return this.isConnected;
+    return this.connected;
   }
 
   getSocket(): WASocket | null {
@@ -123,7 +125,7 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
     if (!key.id) return undefined;
     
     const message = this.messageStore.get(key.id);
-    return message?.message;
+    return message?.message || undefined;
   }
 
   private setupEventHandlers(saveCreds: () => Promise<void>): void {
@@ -162,9 +164,9 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
 
     // Manejar conexión cerrada
     if (connection === 'close') {
-      this.isConnected = false;
+      this.connected = false;
       
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       
       logger.warn(`Conexión cerrada. Código: ${statusCode}`, lastDisconnect?.error);
@@ -207,7 +209,7 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
     } 
     // Manejar conexión establecida
     else if (connection === 'open') {
-      this.isConnected = true;
+      this.connected = true;
       this.reconnectAttempts = 0;
       logger.info('✅ Conectado exitosamente a WhatsApp');
       this.emit('connected');
@@ -218,7 +220,7 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
     }
   }
 
-  private handleIncomingMessages(m: { messages: WAMessage[]; type: proto.WebMessageInfo.StubType | undefined }): void {
+  private handleIncomingMessages(m: { messages: WAMessage[]; type: MessageUpsertType; requestId?: string }): void {
     for (const message of m.messages) {
       if (message.key.fromMe) continue; // Ignorar mensajes propios
 
