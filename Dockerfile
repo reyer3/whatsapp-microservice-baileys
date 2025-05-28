@@ -4,8 +4,8 @@ FROM node:18-alpine
 # Establecer directorio de trabajo
 WORKDIR /app
 
-# Instalar dependencias del sistema necesarias
-RUN apk add --no-cache python3 make g++ wget
+# Instalar dependencias del sistema necesarias (incluyendo git)
+RUN apk add --no-cache python3 make g++ wget git
 
 # Copiar archivos de configuración de dependencias
 COPY package*.json ./
@@ -36,7 +36,7 @@ USER whatsapp
 # Exponer puerto
 EXPOSE 3000
 
-# Variables de entorno por defecto (sin información sensible)
+# Variables de entorno por defecto
 ENV NODE_ENV=production
 ENV PORT=3000
 
