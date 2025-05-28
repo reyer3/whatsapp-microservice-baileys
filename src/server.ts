@@ -81,6 +81,12 @@ export class Server {
               description: 'Obtener estado de conexión WhatsApp',
               auth: 'opcional'
             },
+            diagnostics: {
+              method: 'GET',
+              path: '/api/whatsapp/diagnostics',
+              description: 'Obtener diagnóstico completo del sistema',
+              auth: true
+            },
             connect: {
               method: 'POST',
               path: '/api/whatsapp/connect',
@@ -106,6 +112,13 @@ export class Server {
               path: '/api/whatsapp/disconnect',
               description: 'Desconectar de WhatsApp',
               auth: true
+            },
+            cleanAuth: {
+              method: 'POST',
+              path: '/api/whatsapp/clean-auth',
+              description: 'Limpiar archivos de autenticación (útil para reiniciar)',
+              auth: true,
+              warning: 'Esto desconectará y eliminará todos los archivos de autenticación'
             }
           }
         },
@@ -117,6 +130,11 @@ export class Server {
         connectionMethods: {
           qr: 'Usar /api/whatsapp/connect y escanear QR desde logs',
           pairingCode: 'Usar /api/whatsapp/pairing-code con número de teléfono'
+        },
+        troubleshooting: {
+          diagnostics: 'GET /api/whatsapp/diagnostics - Ver estado completo del sistema',
+          cleanAuth: 'POST /api/whatsapp/clean-auth - Limpiar autenticación si hay problemas',
+          logs: 'Ver logs del contenedor con: docker-compose logs -f'
         }
       });
     });
@@ -174,6 +192,7 @@ export class Server {
         logger.info(`📱 Modo: ${config.server.nodeEnv}`);
         logger.info(`🔗 Health check: http://localhost:${config.server.port}/health`);
         logger.info(`📖 Documentación: http://localhost:${config.server.port}/`);
+        logger.info(`🔍 Diagnóstico: http://localhost:${config.server.port}/api/whatsapp/diagnostics`);
         
         if (config.server.nodeEnv === 'production') {
           logger.warn('⚠️  ADVERTENCIA: Estás usando useMultiFileAuthState en producción');
@@ -181,9 +200,9 @@ export class Server {
         }
       });
 
-      // Iniciar conexión de WhatsApp
-      logger.info('📱 Iniciando conexión a WhatsApp...');
-      await this.whatsappService.connect();
+      // No conectar automáticamente - permitir conexión manual para debugging
+      logger.info('📱 Servidor listo. Para conectar WhatsApp, usar:');
+      logger.info('   curl -X POST -H "x-api-key: test-api-key-change-in-production" http://localhost:3000/api/whatsapp/connect');
 
     } catch (error) {
       logger.error('❌ Error al iniciar el servidor:', error);
