@@ -11,8 +11,8 @@ RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Instalar dependencias
-RUN npm ci --only=production
+# Instalar dependencias (usar install si no hay package-lock.json)
+RUN npm install --only=production
 
 # Copiar código fuente
 COPY src/ ./src/
@@ -33,10 +33,9 @@ USER whatsapp
 # Exponer puerto
 EXPOSE 3000
 
-# Variables de entorno por defecto
+# Variables de entorno por defecto (sin información sensible)
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV WHATSAPP_AUTH_FOLDER=/app/auth
 
 # Comando de inicio
 CMD ["node", "dist/index.js"]
