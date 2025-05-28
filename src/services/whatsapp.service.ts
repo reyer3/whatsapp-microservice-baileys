@@ -6,7 +6,6 @@ import makeWASocket, {
   proto,
   WAMessage
 } from 'baileys';
-import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode-terminal';
 import { WhatsAppService, WhatsAppConfig, MessagePayload, IncomingMessage } from '../types';
 import { logger } from '../utils/logger';
@@ -109,7 +108,10 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
 
     if (connection === 'close') {
       this.isConnected = false;
-      const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+      
+      // Verificar si fue un logout (no reconectar) o error de conexión
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       
       logger.warn('Conexión cerrada debido a:', lastDisconnect?.error);
       
