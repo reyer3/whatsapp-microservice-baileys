@@ -43,6 +43,18 @@ export class WhatsAppController {
         return;
       }
 
+      // Validar formato de teléfono
+      const phoneRegex = /^[\d\s\-\+\(\)]+$/;
+      if (!phoneRegex.test(to)) {
+        const response: APIResponse = {
+          success: false,
+          message: 'Formato de número de teléfono inválido',
+          error: 'Formato inválido'
+        };
+        res.status(400).json(response);
+        return;
+      }
+
       if (!this.whatsappService.isConnected()) {
         const response: APIResponse = {
           success: false,
@@ -112,6 +124,65 @@ export class WhatsAppController {
     } catch (error) {
       logger.error('Error al desconectar:', error);
       this.sendErrorResponse(res, 'Error al desconectar');
+    }
+  };
+
+  // Nuevo: Solicitar código de emparejamiento
+  requestPairingCode = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { phoneNumber } = req.body;
+
+      if (!phoneNumber) {
+        const response: APIResponse = {
+          success: false,
+          message: 'El campo "phoneNumber" es requerido',
+          error: 'Datos faltantes'
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      // Validar formato E.164 (sin +)
+      const e164Regex = /^[1-9]\d{1,14}$/;
+      const cleanPhone = phoneNumber.replace(/\D/g, '');
+      
+      if (!e164Regex.test(cleanPhone)) {
+        const response: APIResponse = {
+          success: false,
+          message: 'Número de teléfono debe estar en formato E.164 sin el signo + (ej: 51987654321)',
+          error: 'Formato inválido'
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      if (!this.whatsappService.getSocket()) {
+        const response: APIResponse = {
+          success: false,
+          message: 'Servicio WhatsApp no inicializado. Ejecutar /connect primero',
+          error: 'Socket no inicializado'
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      const pairingCode = await this.whatsappService.requestPairingCode(cleanPhone);
+      
+      const response: APIResponse = {
+        success: true,
+        message: 'Código de emparejamiento generado correctamente',
+        data: { 
+          phoneNumber: cleanPhone,
+          pairingCode,
+          expiresIn: '3 minutos',
+          instructions: 'Ingresa este código en WhatsApp > Dispositivos vinculados > Vincular dispositivo'
+        }
+      };
+      res.json(response);
+
+    } catch (error) {
+      logger.error('Error al generar código de emparejamiento:', error);
+      this.sendErrorResponse(res, 'Error al generar código de emparejamiento');
     }
   };
 
