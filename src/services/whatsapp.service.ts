@@ -17,7 +17,7 @@ import { EventEmitter } from 'events';
 
 export class BaileysWhatsAppService extends EventEmitter implements WhatsAppService {
   private socket: WASocket | null = null;
-  private connected = false; // Cambié el nombre para evitar conflicto
+  private connected = false;
   private config: WhatsAppConfig;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
@@ -37,21 +37,28 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
   async connect(): Promise<void> {
     try {
       logger.info('Iniciando conexión a WhatsApp...');
+      logger.debug(`Directorio de autenticación: ${this.config.authFolder}`);
       
       const { state, saveCreds } = await useMultiFileAuthState(this.config.authFolder);
+      logger.debug('Estado de autenticación cargado correctamente');
       
       this.socket = makeWASocket({
         auth: state,
-        browser: Browsers.macOS('WhatsApp Microservice'),
+        browser: Browsers.ubuntu('WhatsApp Microservice'), // Cambiado a Ubuntu para mejor compatibilidad
         logger: this.createPinoLogger(),
-        generateHighQualityLinkPreview: true,
+        generateHighQualityLinkPreview: false, // Deshabilitado para mejor rendimiento
         syncFullHistory: false,
-        markOnlineOnConnect: false, // Evitar marcar como online automáticamente
+        markOnlineOnConnect: false,
         getMessage: this.getMessage.bind(this),
-        printQRInTerminal: false, // Manejamos QR manualmente
+        printQRInTerminal: false,
         defaultQueryTimeoutMs: 60000,
+        connectTimeoutMs: 60000,
+        retryRequestDelayMs: 250,
+        maxMsgRetryCount: 5,
+        emitOwnEvents: true,
       });
 
+      logger.debug('Socket WhatsApp creado correctamente');
       this.setupEventHandlers(saveCreds);
       
     } catch (error) {
@@ -63,7 +70,11 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
   async disconnect(): Promise<void> {
     if (this.socket) {
       logger.info('Desconectando de WhatsApp...');
-      this.socket.end(new Error('Desconexión solicitada'));
+      try {
+        this.socket.end(new Error('Desconexión solicitada'));
+      } catch (error) {
+        logger.warn('Error al cerrar socket:', error);
+      }
       this.socket = null;
       this.connected = false;
       this.messageStore.clear();
@@ -111,7 +122,6 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
     }
   }
 
-  // Método público para verificar conexión
   isConnected(): boolean {
     return this.connected;
   }
@@ -120,7 +130,6 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
     return this.socket;
   }
 
-  // Implementación requerida por Baileys para reenvío de mensajes
   private async getMessage(key: proto.IMessageKey): Promise<proto.IMessage | undefined> {
     if (!key.id) return undefined;
     
@@ -130,6 +139,8 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
 
   private setupEventHandlers(saveCreds: () => Promise<void>): void {
     if (!this.socket) return;
+
+    logger.debug('Configurando event handlers...');
 
     // Manejo de cambios de conexión
     this.socket.ev.on('connection.update', this.handleConnectionUpdate.bind(this));
@@ -148,14 +159,18 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
         }
       });
     });
+
+    logger.debug('Event handlers configurados correctamente');
   }
 
   private handleConnectionUpdate(update: Partial<ConnectionState>): void {
     const { connection, lastDisconnect, qr } = update;
+    
+    logger.debug('Connection update:', { connection, qr: !!qr, lastDisconnect: !!lastDisconnect });
 
     // Manejar código QR
     if (qr) {
-      logger.info('Código QR generado - escanear con WhatsApp');
+      logger.info('📱 Código QR generado - escanear con WhatsApp');
       if (this.config.printQRInTerminal) {
         qrcode.generate(qr, { small: true });
       }
@@ -166,44 +181,64 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
     if (connection === 'close') {
       this.connected = false;
       
-      const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      // Mejorar el manejo de errores
+      let statusCode: number | undefined;
+      let errorMessage = 'Error desconocido';
       
-      logger.warn(`Conexión cerrada. Código: ${statusCode}`, lastDisconnect?.error);
+      if (lastDisconnect?.error) {
+        // Intentar diferentes formas de obtener el código de estado
+        if (typeof lastDisconnect.error === 'object') {
+          const error = lastDisconnect.error as any;
+          statusCode = error.output?.statusCode || error.statusCode || error.code;
+          errorMessage = error.message || error.toString();
+        }
+      }
       
-      // Mapear códigos de desconexión para mejor diagnóstico
-      switch (statusCode) {
-        case DisconnectReason.badSession:
-          logger.error('Sesión inválida. Eliminar archivos de autenticación.');
-          break;
-        case DisconnectReason.connectionClosed:
-          logger.warn('Conexión cerrada por el servidor.');
-          break;
-        case DisconnectReason.connectionLost:
-          logger.warn('Conexión perdida.');
-          break;
-        case DisconnectReason.connectionReplaced:
-          logger.warn('Conexión reemplazada por otra sesión.');
-          break;
-        case DisconnectReason.loggedOut:
-          logger.warn('Sesión cerrada por el usuario.');
-          break;
-        case DisconnectReason.restartRequired:
-          logger.info('Reinicio requerido.');
-          break;
-        case DisconnectReason.timedOut:
-          logger.warn('Tiempo de conexión agotado.');
-          break;
-        default:
-          logger.warn(`Desconexión desconocida: ${statusCode}`);
+      logger.warn(`Conexión cerrada. Código: ${statusCode}, Error: ${errorMessage}`);
+      
+      // Decidir si reconectar basado en el código de estado
+      let shouldReconnect = true;
+      
+      if (statusCode) {
+        switch (statusCode) {
+          case DisconnectReason.badSession:
+            logger.error('❌ Sesión inválida. Eliminar archivos de autenticación y reiniciar.');
+            shouldReconnect = false;
+            break;
+          case DisconnectReason.connectionClosed:
+            logger.warn('🔄 Conexión cerrada por el servidor.');
+            break;
+          case DisconnectReason.connectionLost:
+            logger.warn('📡 Conexión perdida.');
+            break;
+          case DisconnectReason.connectionReplaced:
+            logger.warn('🔄 Conexión reemplazada por otra sesión.');
+            shouldReconnect = false;
+            break;
+          case DisconnectReason.loggedOut:
+            logger.warn('👋 Sesión cerrada por el usuario.');
+            shouldReconnect = false;
+            break;
+          case DisconnectReason.restartRequired:
+            logger.info('🔄 Reinicio requerido.');
+            break;
+          case DisconnectReason.timedOut:
+            logger.warn('⏰ Tiempo de conexión agotado.');
+            break;
+          default:
+            logger.warn(`❓ Código de desconexión desconocido: ${statusCode}`);
+        }
+      } else {
+        // Si no hay código de estado, probablemente sea un error de red
+        logger.warn('🌐 Error de conexión de red o inicialización');
       }
       
       if (shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
         this.reconnectAttempts++;
-        logger.info(`Intentando reconectar... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        logger.info(`🔄 Intentando reconectar... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
         setTimeout(() => this.connect(), 3000);
       } else {
-        logger.error('Máximo número de intentos de reconexión alcanzado');
+        logger.error('❌ Máximo número de intentos de reconexión alcanzado o reconexión no permitida');
         this.emit('disconnected');
       }
     } 
@@ -222,11 +257,11 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
 
   private handleIncomingMessages(m: { messages: WAMessage[]; type: MessageUpsertType; requestId?: string }): void {
     for (const message of m.messages) {
-      if (message.key.fromMe) continue; // Ignorar mensajes propios
+      if (message.key.fromMe) continue;
 
       const incomingMessage = this.parseIncomingMessage(message);
       if (incomingMessage) {
-        logger.info(`Mensaje recibido de ${incomingMessage.from}:`, incomingMessage.message);
+        logger.info(`📨 Mensaje recibido de ${incomingMessage.from}: ${incomingMessage.message}`);
         this.emit('message', incomingMessage);
       }
     }
@@ -247,26 +282,22 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
   }
 
   private formatPhoneNumber(phone: string): string {
-    // Remover caracteres no numéricos
     const cleaned = phone.replace(/\D/g, '');
     
-    // Validar formato E.164 sin + (según documentación de Baileys)
     if (cleaned.length < 10) {
       throw new Error('Número de teléfono demasiado corto');
     }
     
-    // Agregar código de país de Perú si no está presente
     if (!cleaned.startsWith('51') && cleaned.length === 9) {
       return `51${cleaned}@s.whatsapp.net`;
     }
     
-    // Si ya tiene código de país, usar tal como está
     return `${cleaned}@s.whatsapp.net`;
   }
 
   private createPinoLogger() {
     return {
-      level: 'silent', // Silenciar logs de Baileys para usar nuestro logger
+      level: 'silent',
       child: () => this.createPinoLogger(),
       trace: () => {},
       debug: () => {},
