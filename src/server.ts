@@ -2,11 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import { config } from '../config';
-import { createWhatsAppRoutes } from '../routes/whatsapp.routes';
-import { BaileysWhatsAppService } from '../services/whatsapp.service';
-import { logger } from '../utils/logger';
-import { APIResponse } from '../types';
+import { config } from './config';
+import { createWhatsAppRoutes } from './routes/whatsapp.routes';
+import { BaileysWhatsAppService } from './services/whatsapp.service';
+import { logger } from './utils/logger';
+import { APIResponse } from './types';
 
 export class Server {
   private app: express.Application;
@@ -33,7 +33,7 @@ export class Server {
 
     // Logging de requests
     this.app.use(morgan('combined', {
-      stream: { write: (message) => logger.info(message.trim()) }
+      stream: { write: (message: string) => logger.info(message.trim()) }
     }));
 
     // Parseo de JSON
@@ -161,7 +161,7 @@ export class Server {
       logger.info('📱 O usar el endpoint /api/whatsapp/pairing-code para código de emparejamiento');
     });
 
-    this.whatsappService.on('message', (message) => {
+    this.whatsappService.on('message', (message: any) => {
       logger.info(`📨 Nuevo mensaje de ${message.from}: ${message.message}`);
     });
   }
