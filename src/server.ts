@@ -51,7 +51,8 @@ export class Server {
           status: 'healthy',
           timestamp: new Date(),
           uptime: process.uptime(),
-          whatsappConnected: this.whatsappService.isConnected()
+          whatsappConnected: this.whatsappService.isConnected(),
+          version: '1.0.0'
         }
       };
       res.json(response);
@@ -65,16 +66,58 @@ export class Server {
       res.json({
         service: 'WhatsApp Microservice with Baileys',
         version: '1.0.0',
+        description: 'Microservicio para conectar instancias WhatsApp usando Baileys',
         endpoints: {
-          health: 'GET /health',
+          health: {
+            method: 'GET',
+            path: '/health',
+            description: 'Verificar estado del servicio',
+            auth: false
+          },
           whatsapp: {
-            status: 'GET /api/whatsapp/status',
-            send: 'POST /api/whatsapp/send',
-            connect: 'POST /api/whatsapp/connect',
-            disconnect: 'POST /api/whatsapp/disconnect'
+            status: {
+              method: 'GET',
+              path: '/api/whatsapp/status',
+              description: 'Obtener estado de conexión WhatsApp',
+              auth: 'opcional'
+            },
+            connect: {
+              method: 'POST',
+              path: '/api/whatsapp/connect',
+              description: 'Conectar a WhatsApp (genera QR)',
+              auth: true
+            },
+            pairingCode: {
+              method: 'POST',
+              path: '/api/whatsapp/pairing-code',
+              description: 'Generar código de emparejamiento',
+              auth: true,
+              body: { phoneNumber: 'string (E.164 sin +)' }
+            },
+            send: {
+              method: 'POST',
+              path: '/api/whatsapp/send',
+              description: 'Enviar mensaje de texto',
+              auth: true,
+              body: { to: 'string', message: 'string' }
+            },
+            disconnect: {
+              method: 'POST',
+              path: '/api/whatsapp/disconnect',
+              description: 'Desconectar de WhatsApp',
+              auth: true
+            }
           }
         },
-        authentication: 'API Key required (x-api-key header)'
+        authentication: {
+          type: 'API Key',
+          header: 'x-api-key',
+          note: 'Requerido para todas las rutas protegidas'
+        },
+        connectionMethods: {
+          qr: 'Usar /api/whatsapp/connect y escanear QR desde logs',
+          pairingCode: 'Usar /api/whatsapp/pairing-code con número de teléfono'
+        }
       });
     });
 
@@ -106,19 +149,20 @@ export class Server {
 
   private setupWhatsAppEventHandlers(): void {
     this.whatsappService.on('connected', () => {
-      logger.info('WhatsApp conectado exitosamente');
+      logger.info('✅ WhatsApp conectado exitosamente');
     });
 
     this.whatsappService.on('disconnected', () => {
-      logger.warn('WhatsApp desconectado');
+      logger.warn('❌ WhatsApp desconectado');
     });
 
     this.whatsappService.on('qr', (qr: string) => {
-      logger.info('Código QR generado para WhatsApp');
+      logger.info('📱 Código QR generado para WhatsApp - Escanear con la app');
+      logger.info('📱 O usar el endpoint /api/whatsapp/pairing-code para código de emparejamiento');
     });
 
     this.whatsappService.on('message', (message) => {
-      logger.info(`Nuevo mensaje recibido de ${message.from}: ${message.message}`);
+      logger.info(`📨 Nuevo mensaje de ${message.from}: ${message.message}`);
     });
   }
 
@@ -129,20 +173,26 @@ export class Server {
         logger.info(`🚀 Servidor iniciado en puerto ${config.server.port}`);
         logger.info(`📱 Modo: ${config.server.nodeEnv}`);
         logger.info(`🔗 Health check: http://localhost:${config.server.port}/health`);
+        logger.info(`📖 Documentación: http://localhost:${config.server.port}/`);
+        
+        if (config.server.nodeEnv === 'production') {
+          logger.warn('⚠️  ADVERTENCIA: Estás usando useMultiFileAuthState en producción');
+          logger.warn('⚠️  Considera implementar un sistema de autenticación con base de datos');
+        }
       });
 
       // Iniciar conexión de WhatsApp
-      logger.info('Iniciando conexión a WhatsApp...');
+      logger.info('📱 Iniciando conexión a WhatsApp...');
       await this.whatsappService.connect();
 
     } catch (error) {
-      logger.error('Error al iniciar el servidor:', error);
+      logger.error('❌ Error al iniciar el servidor:', error);
       process.exit(1);
     }
   }
 
   public async stop(): Promise<void> {
-    logger.info('Cerrando servidor...');
+    logger.info('🛑 Cerrando servidor...');
     await this.whatsappService.disconnect();
     process.exit(0);
   }
