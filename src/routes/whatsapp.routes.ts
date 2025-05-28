@@ -15,6 +15,10 @@ export const createWhatsAppRoutes = (whatsappService: BaileysWhatsAppService): R
   router.post('/connect', authMiddleware, controller.connect);
   router.post('/disconnect', authMiddleware, controller.disconnect);
   router.post('/pairing-code', authMiddleware, controller.requestPairingCode);
+  
+  // Nuevas rutas de diagnóstico y mantenimiento
+  router.get('/diagnostics', authMiddleware, controller.getDiagnostics);
+  router.post('/clean-auth', authMiddleware, controller.cleanAuth);
 
   return router;
 };
