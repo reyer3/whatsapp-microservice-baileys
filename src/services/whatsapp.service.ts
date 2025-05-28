@@ -10,10 +10,16 @@ import makeWASocket, {
   Browsers,
   MessageUpsertType
 } from 'baileys';
+import { webcrypto } from 'crypto';
 import qrcode from 'qrcode-terminal';
 import { WhatsAppService, WhatsAppConfig, MessagePayload, IncomingMessage } from '../types';
 import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
+
+// Configurar crypto globalmente para Baileys
+if (!globalThis.crypto) {
+  globalThis.crypto = webcrypto as any;
+}
 
 export class BaileysWhatsAppService extends EventEmitter implements WhatsAppService {
   private socket: WASocket | null = null;
@@ -31,6 +37,17 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
     if (process.env.NODE_ENV === 'production') {
       logger.warn('⚠️  ADVERTENCIA: useMultiFileAuthState no debería usarse en producción');
       logger.warn('⚠️  Implementa tu propio sistema de autenticación con base de datos');
+    }
+
+    // Verificar que crypto esté disponible
+    try {
+      if (globalThis.crypto && globalThis.crypto.getRandomValues) {
+        logger.debug('✅ Módulo crypto configurado correctamente');
+      } else {
+        logger.error('❌ Módulo crypto no está disponible');
+      }
+    } catch (error) {
+      logger.error('❌ Error verificando crypto:', error);
     }
   }
 
@@ -63,6 +80,13 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
       
     } catch (error) {
       logger.error('Error al conectar con WhatsApp:', error);
+      
+      // Diagnóstico específico para errores de crypto
+      if (error instanceof Error && error.message.includes('crypto')) {
+        logger.error('❌ Error de crypto detectado. Verificando configuración...');
+        logger.error('💡 Intenta reiniciar el contenedor completamente');
+      }
+      
       throw error;
     }
   }
@@ -194,6 +218,13 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
         // Extraer mensaje de error
         errorMessage = error.message || error.toString();
         
+        // Diagnóstico específico para errores de crypto
+        if (errorMessage.includes('crypto')) {
+          logger.error('🔐 Error de crypto detectado:', errorMessage);
+          logger.error('💡 Solución: Verificar configuración de crypto en el contenedor');
+          statusCode = 'CRYPTO_ERROR';
+        }
+        
         // Logging mejorado del error completo
         logger.debug('Error completo:', {
           message: errorMessage,
@@ -205,10 +236,13 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
       
       logger.warn(`Conexión cerrada. Código: ${statusCode}, Error: ${errorMessage}`);
       
-      // Decidir si reconectar
+      // Decidir si reconectar (no reconectar en errores de crypto)
       let shouldReconnect = true;
       
-      if (typeof statusCode === 'number') {
+      if (statusCode === 'CRYPTO_ERROR' || (typeof errorMessage === 'string' && errorMessage.includes('crypto'))) {
+        logger.error('🔐 Error de crypto - no reconectar. Requiere reinicio del contenedor.');
+        shouldReconnect = false;
+      } else if (typeof statusCode === 'number') {
         switch (statusCode) {
           case DisconnectReason.badSession:
             logger.error('❌ Sesión inválida. Eliminar archivos de autenticación y reiniciar.');
