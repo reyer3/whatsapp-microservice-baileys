@@ -11,14 +11,17 @@ RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Instalar dependencias (usar install si no hay package-lock.json)
-RUN npm install --only=production
+# Instalar todas las dependencias (incluidas dev para compilar)
+RUN npm install
 
 # Copiar código fuente
 COPY src/ ./src/
 
 # Compilar TypeScript
 RUN npm run build
+
+# Limpiar dependencias de desarrollo para reducir tamaño
+RUN npm prune --production
 
 # Crear usuario no-root para seguridad
 RUN addgroup -g 1001 -S nodejs && \
