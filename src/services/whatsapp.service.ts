@@ -39,9 +39,9 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
       logger.warn('⚠️  Implementa tu propio sistema de autenticación con base de datos');
     }
 
-    // Verificar que crypto esté disponible
+    // Verificar que crypto esté disponible (corrección del error TypeScript)
     try {
-      if (globalThis.crypto && globalThis.crypto.getRandomValues) {
+      if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') {
         logger.debug('✅ Módulo crypto configurado correctamente');
       } else {
         logger.error('❌ Módulo crypto no está disponible');
