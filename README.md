@@ -16,6 +16,7 @@ Un microservicio robusto y escalable para conectar instancias de WhatsApp usando
 - 🏗️ **Arquitectura modular** y escalable
 - 🛡️ **Implementación de getMessage** para reenvío de mensajes
 - 📝 **Validaciones robustas** de entrada
+- 🔍 **Herramientas de diagnóstico** integradas
 
 ## 🚀 Inicio Rápido
 
@@ -25,47 +26,50 @@ Un microservicio robusto y escalable para conectar instancias de WhatsApp usando
 - npm o yarn
 - Docker (opcional)
 
-### Instalación Local
+### Instalación con Docker (Recomendado)
 
-1. **Clonar el repositorio**
 ```bash
+# Clonar y actualizar
 git clone https://github.com/reyer3/whatsapp-microservice-baileys.git
 cd whatsapp-microservice-baileys
-```
-
-2. **Instalar dependencias**
-```bash
-npm install
-```
-
-3. **Configurar variables de entorno**
-```bash
-cp .env.example .env
-# Editar .env con tu configuración
-```
-
-4. **Compilar y ejecutar**
-```bash
-npm run build
-npm start
-```
-
-O en modo desarrollo:
-```bash
-npm run dev
-```
-
-### 🐳 Usando Docker
-
-1. **Actualizar y construir**
-```bash
 git pull origin main
-docker-compose down
+
+# Iniciar servicio
 docker-compose up -d
+
+# Ver logs
+docker-compose logs -f whatsapp-microservice
 ```
 
-2. **Ver logs del servicio**
+### 🔍 Diagnóstico y Solución de Problemas
+
+Si el servicio no se conecta automáticamente, sigue estos pasos:
+
+#### 1. **Verificar Estado del Servicio**
 ```bash
+curl http://localhost:3000/health
+```
+
+#### 2. **Ejecutar Diagnóstico Completo**
+```bash
+curl -H "x-api-key: test-api-key-change-in-production" \
+     http://localhost:3000/api/whatsapp/diagnostics
+```
+
+#### 3. **Limpiar Autenticación (si es necesario)**
+```bash
+# Solo si hay problemas de sesión
+curl -X POST -H "x-api-key: test-api-key-change-in-production" \
+     http://localhost:3000/api/whatsapp/clean-auth
+```
+
+#### 4. **Conectar Manualmente**
+```bash
+# Iniciar conexión
+curl -X POST -H "x-api-key: test-api-key-change-in-production" \
+     http://localhost:3000/api/whatsapp/connect
+
+# Ver logs para código QR
 docker-compose logs -f whatsapp-microservice
 ```
 
@@ -81,7 +85,7 @@ WHATSAPP_SESSION_ID=whatsapp-session
 WHATSAPP_AUTH_FOLDER=./auth
 
 # Configuración de logging
-LOG_LEVEL=info
+LOG_LEVEL=debug
 
 # IMPORTANTE: Cambiar esta API key por una segura en producción
 API_KEY=test-api-key-change-in-production
@@ -95,7 +99,7 @@ Todas las rutas protegidas requieren el header:
 x-api-key: tu-api-key
 ```
 
-### Endpoints Disponibles
+### Endpoints Principales
 
 #### `GET /health`
 Health check del servicio
@@ -113,8 +117,45 @@ Health check del servicio
 }
 ```
 
+#### `GET /api/whatsapp/diagnostics` 🆕
+Diagnóstico completo del sistema
+```json
+{
+  "success": true,
+  "data": {
+    "service": {
+      "connected": false,
+      "socketExists": false
+    },
+    "authentication": {
+      "folderExists": true,
+      "folderPath": "/app/auth",
+      "filesCount": 3,
+      "files": ["creds.json", "keys.json", "session.json"],
+      "hasCredentials": true,
+      "hasKeys": true
+    },
+    "environment": {
+      "nodeEnv": "development",
+      "logLevel": "debug",
+      "authFolder": "/app/auth"
+    }
+  }
+}
+```
+
+#### `POST /api/whatsapp/clean-auth` 🆕
+Limpiar archivos de autenticación
+```json
+{
+  "success": true,
+  "message": "Archivos de autenticación limpiados correctamente (3 archivos eliminados)",
+  "data": { "filesRemoved": 3 }
+}
+```
+
 #### `GET /api/whatsapp/status`
-Obtener estado de conexión de WhatsApp
+Obtener estado de conexión
 ```json
 {
   "success": true,
@@ -127,7 +168,7 @@ Obtener estado de conexión de WhatsApp
 ```
 
 #### `POST /api/whatsapp/connect`
-Iniciar conexión a WhatsApp (genera QR code)
+Conectar a WhatsApp (genera QR code)
 ```json
 {
   "success": true,
@@ -135,25 +176,11 @@ Iniciar conexión a WhatsApp (genera QR code)
 }
 ```
 
-#### `POST /api/whatsapp/pairing-code` ⭐ **NUEVO**
-Generar código de emparejamiento (alternativa al QR)
+#### `POST /api/whatsapp/pairing-code`
+Generar código de emparejamiento
 ```json
 {
   "phoneNumber": "51987654321"
-}
-```
-
-Respuesta:
-```json
-{
-  "success": true,
-  "message": "Código de emparejamiento generado correctamente",
-  "data": {
-    "phoneNumber": "51987654321",
-    "pairingCode": "ABC123",
-    "expiresIn": "3 minutos",
-    "instructions": "Ingresa este código en WhatsApp > Dispositivos vinculados > Vincular dispositivo"
-  }
 }
 ```
 
@@ -163,28 +190,6 @@ Enviar mensaje de texto
 {
   "to": "51987654321",
   "message": "Hola desde el microservicio!"
-}
-```
-
-Respuesta:
-```json
-{
-  "success": true,
-  "message": "Mensaje enviado correctamente",
-  "data": {
-    "to": "51987654321",
-    "message": "Hola desde el microservicio!",
-    "timestamp": "2025-05-28T16:30:00.000Z"
-  }
-}
-```
-
-#### `POST /api/whatsapp/disconnect`
-Desconectar de WhatsApp
-```json
-{
-  "success": true,
-  "message": "Desconectado de WhatsApp correctamente"
 }
 ```
 
@@ -217,176 +222,144 @@ curl -X POST -H "x-api-key: test-api-key-change-in-production" \
 # 3. Usar código en WhatsApp > Dispositivos vinculados > Vincular dispositivo
 ```
 
-## 🏗️ Arquitectura del Proyecto
+## 🛠️ Solución de Problemas Comunes
 
-```
-src/
-├── config/           # Configuración centralizada
-├── controllers/      # Controladores de API REST
-├── middleware/       # Middlewares (auth, logging, etc.)
-├── routes/          # Definición de rutas
-├── services/        # Lógica de negocio (WhatsApp)
-├── types/           # Interfaces y tipos TypeScript
-├── utils/           # Utilidades (logger, helpers)
-├── server.ts        # Configuración del servidor Express
-└── index.ts         # Punto de entrada principal
-```
+### ❌ **Problema: Conexión falla constantemente**
+**Síntomas:** Logs muestran "Código: undefined" y reconexiones fallidas
 
-### Mejores Prácticas Implementadas
+**Solución:**
+1. Verificar diagnóstico: `GET /api/whatsapp/diagnostics`
+2. Limpiar autenticación: `POST /api/whatsapp/clean-auth`
+3. Conectar manualmente: `POST /api/whatsapp/connect`
 
-#### **Según Documentación Oficial de Baileys:**
-- ✅ **Función getMessage implementada** para reenvío de mensajes
-- ✅ **Manejo inteligente de códigos de desconexión**
-- ✅ **Configuración optimizada del socket**
-- ✅ **Soporte para códigos de emparejamiento**
-- ✅ **Logger personalizado** (no usar el de Baileys)
-- ⚠️ **Advertencia sobre useMultiFileAuthState en producción**
+### ❌ **Problema: No aparece código QR**
+**Síntomas:** Se conecta pero no muestra QR en logs
 
-#### **Principios de Código Limpio:**
-- **DRY (Don't Repeat Yourself)**: Configuración centralizada, servicios reutilizables
-- **KISS (Keep It Simple, Stupid)**: Interfaces claras, responsabilidades bien definidas
-- **Separación de responsabilidades**: Cada módulo tiene una función específica
-- **Inyección de dependencias**: Servicios desacoplados y testeable
-
-## 📡 Eventos del Sistema
-
-El servicio emite los siguientes eventos internos:
-
-- `connected`: WhatsApp conectado exitosamente
-- `disconnected`: WhatsApp desconectado
-- `qr`: Código QR generado para conexión
-- `message`: Nuevo mensaje recibido
-
-## 🔧 Scripts Disponibles
-
+**Solución:**
 ```bash
-npm run dev          # Modo desarrollo con hot-reload
-npm run build        # Compilar TypeScript
-npm start            # Ejecutar en producción
-npm run clean        # Limpiar archivos compilados
+# Verificar si socket está inicializado
+curl -H "x-api-key: test-api-key-change-in-production" \
+     http://localhost:3000/api/whatsapp/diagnostics
+
+# Si no está inicializado, limpiar y reconectar
+curl -X POST -H "x-api-key: test-api-key-change-in-production" \
+     http://localhost:3000/api/whatsapp/clean-auth
+
+curl -X POST -H "x-api-key: test-api-key-change-in-production" \
+     http://localhost:3000/api/whatsapp/connect
 ```
 
-## 📦 Dependencias Principales
+### ❌ **Problema: Error de sesión inválida**
+**Síntomas:** Logs muestran "badSession" o "Sesión inválida"
 
-- **baileys**: Librería para WhatsApp Web API
-- **express**: Framework web
-- **typescript**: Lenguaje de programación tipado
-- **helmet**: Seguridad para Express
-- **cors**: Manejo de CORS
-- **morgan**: Logging de requests HTTP
-- **dotenv**: Manejo de variables de entorno
-- **qrcode-terminal**: Generación de QR en terminal
+**Solución:**
+```bash
+# Limpiar completamente la autenticación
+curl -X POST -H "x-api-key: test-api-key-change-in-production" \
+     http://localhost:3000/api/whatsapp/clean-auth
 
-## 🔒 Seguridad
+# Reiniciar contenedor
+docker-compose restart whatsapp-microservice
 
-- Autenticación requerida con API Key
-- Headers de seguridad con Helmet
-- Validación de entrada en todos los endpoints
-- Usuario no-root en contenedor Docker
-- Variables de entorno para configuración sensible
-- Validación de formato E.164 para números de teléfono
+# Conectar nuevamente
+curl -X POST -H "x-api-key: test-api-key-change-in-production" \
+     http://localhost:3000/api/whatsapp/connect
+```
 
-## 📈 Monitoreo y Logging
+### ❌ **Problema: Archivos de autenticación no persisten**
+**Síntomas:** Siempre pide QR/código nuevamente
 
-- Health check endpoint para monitoreo
-- Logging estructurado con niveles configurables
-- Métricas de uptime y estado de conexión
-- Manejo graceful de señales del sistema
-- Códigos de error detallados de Baileys
+**Solución:**
+```bash
+# Verificar volúmenes de Docker
+docker volume ls | grep whatsapp
+
+# Verificar permisos
+docker-compose exec whatsapp-microservice ls -la /app/auth
+
+# Si es necesario, recrear volúmenes
+docker-compose down -v
+docker-compose up -d
+```
+
+## 🔧 Scripts de Diagnóstico Rápido
+
+### Script de Diagnóstico Completo
+```bash
+#!/bin/bash
+echo "=== Diagnóstico WhatsApp Microservice ==="
+echo "1. Health Check:"
+curl -s http://localhost:3000/health | jq '.data.whatsappConnected'
+
+echo -e "\n2. Diagnóstico Completo:"
+curl -s -H "x-api-key: test-api-key-change-in-production" \
+     http://localhost:3000/api/whatsapp/diagnostics | jq '.'
+
+echo -e "\n3. Logs recientes:"
+docker-compose logs --tail=10 whatsapp-microservice
+```
+
+### Script de Reinicio Limpio
+```bash
+#!/bin/bash
+echo "=== Reinicio Limpio WhatsApp Microservice ==="
+echo "1. Limpiando autenticación..."
+curl -X POST -H "x-api-key: test-api-key-change-in-production" \
+     http://localhost:3000/api/whatsapp/clean-auth
+
+echo -e "\n2. Reiniciando servicio..."
+docker-compose restart whatsapp-microservice
+
+echo -e "\n3. Esperando 5 segundos..."
+sleep 5
+
+echo -e "\n4. Conectando..."
+curl -X POST -H "x-api-key: test-api-key-change-in-production" \
+     http://localhost:3000/api/whatsapp/connect
+
+echo -e "\n5. Ver logs para código QR:"
+echo "docker-compose logs -f whatsapp-microservice"
+```
+
+## 📈 Monitoreo Avanzado
+
+### Comandos de Monitoreo
+```bash
+# Estado en tiempo real
+watch -n 5 'curl -s http://localhost:3000/health | jq ".data.whatsappConnected"'
+
+# Logs en tiempo real con filtro
+docker-compose logs -f whatsapp-microservice | grep -E "(QR|conectado|error)"
+
+# Estadísticas del contenedor
+docker stats whatsapp-microservice
+```
 
 ## ⚠️ Consideraciones de Producción
 
 ### 🚨 **IMPORTANTE - Sistema de Autenticación**
-El proyecto actualmente usa `useMultiFileAuthState` que **NO ES RECOMENDADO PARA PRODUCCIÓN** según la documentación oficial de Baileys.
+El proyecto actualmente usa `useMultiFileAuthState` que **NO ES RECOMENDADO PARA PRODUCCIÓN**.
 
 **Para producción debes implementar:**
 - Sistema de autenticación con base de datos (SQL/NoSQL/Redis)
 - Almacenamiento seguro de credenciales
 - Gestión adecuada de sesiones
 
-### 📝 **Ejemplo de Implementación Personalizada:**
-```typescript
-// Implementar AuthenticationState personalizado
-const customAuthState: AuthenticationState = {
-  creds: await getCredsFromDatabase(),
-  keys: await getKeysFromDatabase()
-};
-
-const sock = makeWASocket({ 
-  auth: customAuthState,
-  // ... otras configuraciones
-});
-
-sock.ev.on('creds.update', async (creds) => {
-  await saveCredsToDatabase(creds);
-});
-```
-
-## 🚧 Roadmap
-
-- [ ] Sistema de autenticación para producción (SQL/Redis)
-- [ ] Soporte para mensajes multimedia (imágenes, audio, video)
-- [ ] Webhook para notificaciones de mensajes recibidos
-- [ ] Métricas con Prometheus
-- [ ] Tests unitarios y de integración
-- [ ] Documentación con Swagger/OpenAPI
-- [ ] Soporte para múltiples instancias de WhatsApp
-- [ ] Cache para metadatos de grupos
-- [ ] Rate limiting inteligente
-
-## 🛠️ Solución de Problemas
-
-### Error de Git en Docker
-**Síntoma:** `npm error enoent An unknown git error occurred`
-**Solución:** ✅ Corregido - agregado `git` a las dependencias del Dockerfile
-
-### Advertencias de Producción
-**Síntoma:** Advertencias sobre `useMultiFileAuthState`
-**Solución:** Implementar sistema de auth personalizado con BD
-
-### Problemas de Conexión
-```bash
-# Ver logs detallados
-docker-compose logs -f whatsapp-microservice
-
-# Reiniciar servicio
-docker-compose restart whatsapp-microservice
-
-# Limpiar datos de auth (si es necesario)
-docker-compose down
-docker volume rm whatsapp-microservice-baileys_auth_data
-docker-compose up -d
-```
-
 ## 🤝 Contribuir
 
 1. Fork el proyecto
-2. Crear una rama feature (`git checkout -b feature/nueva-funcionalidad`)
-3. Commit los cambios (`git commit -am 'Agregar nueva funcionalidad'`)
+2. Crear rama feature (`git checkout -b feature/nueva-funcionalidad`)
+3. Commit cambios (`git commit -am 'Agregar nueva funcionalidad'`)
 4. Push a la rama (`git push origin feature/nueva-funcionalidad`)
-5. Crear un Pull Request
+5. Crear Pull Request
 
 ## ⚠️ Disclaimer
 
-Este proyecto utiliza la librería Baileys que se conecta a WhatsApp Web mediante ingeniería inversa. No está afiliado ni respaldado por WhatsApp. Usar bajo tu propia responsabilidad y cumpliendo los términos de servicio de WhatsApp.
-
-**Recomendaciones:**
-- No usar para spam o mensajes masivos
-- Respetar la privacidad de los usuarios
-- Cumplir con las políticas de WhatsApp
-- Usar solo para propósitos legítimos
+Este proyecto utiliza Baileys que se conecta a WhatsApp Web mediante ingeniería inversa. No está afiliado ni respaldado por WhatsApp. Usar bajo tu propia responsabilidad y cumpliendo los términos de servicio de WhatsApp.
 
 ## 📄 Licencia
 
 MIT License - ver el archivo [LICENSE](LICENSE) para más detalles.
-
-## 📞 Soporte
-
-Si tienes alguna pregunta o necesitas soporte:
-
-- Crear un issue en GitHub
-- Consultar la [documentación de Baileys](https://baileys.wiki/docs/intro)
-- Revisar la [configuración oficial](https://baileys.wiki/docs/socket/configuration)
 
 ---
 
