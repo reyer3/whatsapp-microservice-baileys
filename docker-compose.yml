@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  whatsapp-microservice:
+    build: .
+    container_name: whatsapp-microservice
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - API_KEY=${API_KEY:-change-this-api-key}
+      - WHATSAPP_SESSION_ID=${WHATSAPP_SESSION_ID:-whatsapp-session}
+      - WHATSAPP_AUTH_FOLDER=/app/auth
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./auth:/app/auth
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - whatsapp-network
+
+networks:
+  whatsapp-network:
+    driver: bridge
+
+volumes:
+  auth_data:
+    driver: local
+  logs_data:
+    driver: local
