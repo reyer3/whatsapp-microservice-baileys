@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   whatsapp-microservice:
     build: .
@@ -8,12 +6,12 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - PORT=3000
-      - API_KEY=${API_KEY:-your-secure-api-key-here}
+      - API_KEY=${API_KEY:-test-api-key-change-in-production}
       - WHATSAPP_SESSION_ID=${WHATSAPP_SESSION_ID:-whatsapp-session}
       - WHATSAPP_AUTH_FOLDER=/app/auth
-      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
     volumes:
       - auth_data:/app/auth
       - logs_data:/app/logs
