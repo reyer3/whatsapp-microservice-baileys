@@ -17,6 +17,12 @@ export const config = {
     printQRInTerminal: process.env.NODE_ENV !== 'production'
   } as WhatsAppConfig,
   
+  instance: {
+    name: process.env.WHATSAPP_INSTANCE_NAME || 'WhatsApp Instance',
+    phoneNumber: process.env.WHATSAPP_PHONE_NUMBER || 'No configurado',
+    description: process.env.WHATSAPP_INSTANCE_DESCRIPTION || 'Instancia de WhatsApp'
+  },
+  
   logging: {
     level: process.env.LOG_LEVEL || 'info'
   }
