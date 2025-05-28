@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { BaileysWhatsAppService } from '../services/whatsapp.service';
 import { APIResponse, MessagePayload, ConnectionStatus } from '../types';
 import { logger } from '../utils/logger';
+import fs from 'fs';
+import path from 'path';
 
 export class WhatsAppController {
   constructor(private whatsappService: BaileysWhatsAppService) {}
@@ -24,6 +26,97 @@ export class WhatsAppController {
     } catch (error) {
       logger.error('Error al obtener estado:', error);
       this.sendErrorResponse(res, 'Error al obtener estado de conexión');
+    }
+  };
+
+  // Nuevo: Diagnosticar estado de archivos de autenticación
+  getDiagnostics = (req: Request, res: Response): void => {
+    try {
+      const authFolder = process.env.WHATSAPP_AUTH_FOLDER || './auth';
+      
+      let authFiles: string[] = [];
+      let authFolderExists = false;
+      
+      try {
+        authFolderExists = fs.existsSync(authFolder);
+        if (authFolderExists) {
+          authFiles = fs.readdirSync(authFolder);
+        }
+      } catch (error) {
+        logger.warn('Error al leer directorio de autenticación:', error);
+      }
+
+      const diagnostics = {
+        service: {
+          connected: this.whatsappService.isConnected(),
+          socketExists: !!this.whatsappService.getSocket()
+        },
+        authentication: {
+          folderExists: authFolderExists,
+          folderPath: authFolder,
+          filesCount: authFiles.length,
+          files: authFiles,
+          hasCredentials: authFiles.some(f => f.includes('creds')),
+          hasKeys: authFiles.some(f => f.includes('keys'))
+        },
+        environment: {
+          nodeEnv: process.env.NODE_ENV,
+          logLevel: process.env.LOG_LEVEL,
+          authFolder: process.env.WHATSAPP_AUTH_FOLDER
+        }
+      };
+
+      const response: APIResponse = {
+        success: true,
+        message: 'Diagnóstico obtenido correctamente',
+        data: diagnostics
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error('Error al obtener diagnóstico:', error);
+      this.sendErrorResponse(res, 'Error al obtener diagnóstico');
+    }
+  };
+
+  // Nuevo: Limpiar archivos de autenticación
+  cleanAuth = async (req: Request, res: Response): Promise<void> => {
+    try {
+      // Primero desconectar si está conectado
+      if (this.whatsappService.isConnected()) {
+        await this.whatsappService.disconnect();
+        // Esperar un momento para que se desconecte completamente
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      const authFolder = process.env.WHATSAPP_AUTH_FOLDER || './auth';
+      
+      let filesRemoved = 0;
+      try {
+        if (fs.existsSync(authFolder)) {
+          const files = fs.readdirSync(authFolder);
+          for (const file of files) {
+            fs.unlinkSync(path.join(authFolder, file));
+            filesRemoved++;
+          }
+          logger.info(`Eliminados ${filesRemoved} archivos de autenticación`);
+        }
+      } catch (error) {
+        logger.error('Error al limpiar archivos de autenticación:', error);
+        this.sendErrorResponse(res, 'Error al limpiar archivos de autenticación');
+        return;
+      }
+
+      const response: APIResponse = {
+        success: true,
+        message: `Archivos de autenticación limpiados correctamente (${filesRemoved} archivos eliminados)`,
+        data: { filesRemoved }
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error('Error al limpiar autenticación:', error);
+      this.sendErrorResponse(res, 'Error al limpiar autenticación');
     }
   };
 
@@ -127,7 +220,7 @@ export class WhatsAppController {
     }
   };
 
-  // Nuevo: Solicitar código de emparejamiento
+  // Solicitar código de emparejamiento
   requestPairingCode = async (req: Request, res: Response): Promise<void> => {
     try {
       const { phoneNumber } = req.body;
