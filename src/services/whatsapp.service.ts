@@ -10,10 +10,21 @@ import makeWASocket, {
   Browsers,
   MessageUpsertType
 } from 'baileys';
+import crypto from 'crypto';
 import qrcode from 'qrcode-terminal';
 import { WhatsAppService, WhatsAppConfig, MessagePayload, IncomingMessage } from '../types';
 import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
+
+// Asegurar que crypto esté disponible globalmente
+if (typeof global !== 'undefined' && !global.crypto) {
+  global.crypto = crypto;
+}
+
+// También para el objeto global de Node.js
+if (typeof globalThis !== 'undefined' && !globalThis.crypto) {
+  globalThis.crypto = crypto;
+}
 
 export class BaileysWhatsAppService extends EventEmitter implements WhatsAppService {
   private socket: WASocket | null = null;
@@ -32,6 +43,14 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
       logger.warn('⚠️  ADVERTENCIA: useMultiFileAuthState no debería usarse en producción');
       logger.warn('⚠️  Implementa tu propio sistema de autenticación con base de datos');
     }
+
+    // Verificar que crypto esté disponible
+    try {
+      crypto.randomBytes(16);
+      logger.debug('✅ Módulo crypto disponible y funcionando');
+    } catch (error) {
+      logger.error('❌ Error con módulo crypto:', error);
+    }
   }
 
   async connect(): Promise<void> {
@@ -44,9 +63,9 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
       
       this.socket = makeWASocket({
         auth: state,
-        browser: Browsers.ubuntu('WhatsApp Microservice'), // Cambiado a Ubuntu para mejor compatibilidad
+        browser: Browsers.ubuntu('WhatsApp Microservice'),
         logger: this.createPinoLogger(),
-        generateHighQualityLinkPreview: false, // Deshabilitado para mejor rendimiento
+        generateHighQualityLinkPreview: false,
         syncFullHistory: false,
         markOnlineOnConnect: false,
         getMessage: this.getMessage.bind(this),
@@ -56,6 +75,9 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
         retryRequestDelayMs: 250,
         maxMsgRetryCount: 5,
         emitOwnEvents: true,
+        // Configuraciones adicionales para evitar problemas de crypto
+        shouldSyncHistoryMessage: () => false,
+        shouldIgnoreJid: () => false,
       });
 
       logger.debug('Socket WhatsApp creado correctamente');
@@ -63,6 +85,13 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
       
     } catch (error) {
       logger.error('Error al conectar con WhatsApp:', error);
+      
+      // Diagnóstico específico para errores de crypto
+      if (error.message && error.message.includes('crypto')) {
+        logger.error('❌ Error relacionado con crypto detectado');
+        logger.error('💡 Intenta reiniciar el contenedor o verificar la versión de Node.js');
+      }
+      
       throw error;
     }
   }
@@ -181,22 +210,38 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
     if (connection === 'close') {
       this.connected = false;
       
-      // Mejorar el manejo de errores
+      // Mejorar el manejo de errores incluyendo crypto
       let statusCode: number | undefined;
       let errorMessage = 'Error desconocido';
       
       if (lastDisconnect?.error) {
-        // Intentar diferentes formas de obtener el código de estado
-        if (typeof lastDisconnect.error === 'object') {
-          const error = lastDisconnect.error as any;
-          statusCode = error.output?.statusCode || error.statusCode || error.code;
-          errorMessage = error.message || error.toString();
+        const error = lastDisconnect.error as any;
+        
+        // Extraer código de estado
+        statusCode = error.output?.statusCode || error.statusCode || error.code;
+        
+        // Extraer mensaje de error
+        errorMessage = error.message || error.toString();
+        
+        // Diagnóstico específico para errores de crypto
+        if (errorMessage.includes('crypto')) {
+          logger.error('🔐 Error de crypto detectado:', errorMessage);
+          logger.error('💡 Solución: Reiniciar contenedor o verificar configuración de Node.js');
+          statusCode = 'CRYPTO_ERROR' as any;
         }
+        
+        // Logging mejorado del error completo
+        logger.debug('Error completo:', {
+          message: errorMessage,
+          statusCode,
+          stack: error.stack,
+          name: error.name
+        });
       }
       
       logger.warn(`Conexión cerrada. Código: ${statusCode}, Error: ${errorMessage}`);
       
-      // Decidir si reconectar basado en el código de estado
+      // Decidir si reconectar
       let shouldReconnect = true;
       
       if (statusCode) {
@@ -225,12 +270,21 @@ export class BaileysWhatsAppService extends EventEmitter implements WhatsAppServ
           case DisconnectReason.timedOut:
             logger.warn('⏰ Tiempo de conexión agotado.');
             break;
+          case 'CRYPTO_ERROR':
+            logger.error('🔐 Error de crypto - no reconectar automáticamente');
+            shouldReconnect = false;
+            break;
           default:
-            logger.warn(`❓ Código de desconexión desconocido: ${statusCode}`);
+            logger.warn(`❓ Código de desconexión: ${statusCode}`);
         }
       } else {
-        // Si no hay código de estado, probablemente sea un error de red
-        logger.warn('🌐 Error de conexión de red o inicialización');
+        // Si no hay código, verificar el mensaje de error
+        if (errorMessage.includes('crypto')) {
+          logger.error('🔐 Error de crypto sin código de estado');
+          shouldReconnect = false;
+        } else {
+          logger.warn('🌐 Error de conexión de red o inicialización');
+        }
       }
       
       if (shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
